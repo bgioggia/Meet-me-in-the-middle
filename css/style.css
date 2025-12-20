@@ -239,13 +239,65 @@ body {
     cursor: crosshair;
 }
 
-/* Selected Location Display */
+/* Preview Location (before confirming) */
+.preview-location {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background: #FEF3C7;
+    border: 2px solid #F59E0B;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    animation: fadeIn 0.2s ease;
+}
+
+.preview-icon {
+    font-size: 1.25rem;
+}
+
+.preview-name {
+    flex: 1;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.confirm-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--secondary-color);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.confirm-btn:hover {
+    background: #059669;
+    transform: scale(1.02);
+}
+
+.confirm-btn svg {
+    flex-shrink: 0;
+}
+
+/* Selected Location Display (after confirming) */
 .selected-location {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.875rem 1rem;
-    background: var(--primary-light);
+    background: #D1FAE5;
+    border: 2px solid var(--secondary-color);
     border-radius: var(--radius-md);
     margin-bottom: 1rem;
 }

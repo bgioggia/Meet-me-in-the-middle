@@ -19,6 +19,10 @@ class MeetInTheMiddle {
         };
         this.stepMarkers = {};
 
+        // Preview state (before confirming)
+        this.previewLocations = { 1: null, 2: null };
+        this.previewMarkers = { 1: null, 2: null };
+
         // Debounce timers
         this.searchTimers = {};
 
@@ -76,10 +80,18 @@ class MeetInTheMiddle {
             }
         });
 
+        // Confirm buttons (for preview -> confirmed)
+        document.querySelectorAll('.confirm-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const locationNum = parseInt(e.currentTarget.dataset.location);
+                this.confirmLocation(locationNum);
+            });
+        });
+
         // Clear/Change buttons
         document.querySelectorAll('.clear-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const locationNum = parseInt(e.target.dataset.location);
+                const locationNum = parseInt(e.currentTarget.dataset.location);
                 this.clearLocation(locationNum);
             });
         });
@@ -114,8 +126,12 @@ class MeetInTheMiddle {
         });
     }
 
-    // Handle click on step map
+    // Handle click on step map - shows preview marker
     async handleStepMapClick(stepNum, event) {
+        // Don't allow clicking if location is already confirmed
+        const confirmedLocation = stepNum === 1 ? this.location1 : this.location2;
+        if (confirmedLocation) return;
+
         const { lat, lng: lon } = event.latlng;
 
         try {
@@ -123,19 +139,13 @@ class MeetInTheMiddle {
             const name = await this.reverseGeocode(lat, lon);
             const location = { lat, lon, name };
 
-            // Update state
-            if (stepNum === 1) {
-                this.location1 = location;
-                document.getElementById('location1').value = name;
-            } else {
-                this.location2 = location;
-                document.getElementById('location2').value = name;
-            }
+            // Update preview state
+            this.previewLocations[stepNum] = location;
+            document.getElementById(`location${stepNum}`).value = name;
 
-            // Update marker on step map
-            this.updateStepMarker(stepNum);
-            this.updateSelectedDisplay(stepNum);
-            this.updateStepButtons();
+            // Update preview marker and display
+            this.updatePreviewMarker(stepNum);
+            this.updatePreviewDisplay(stepNum);
 
         } catch (error) {
             console.error('Reverse geocoding failed:', error);
@@ -143,18 +153,77 @@ class MeetInTheMiddle {
             const name = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
             const location = { lat, lon, name };
 
-            if (stepNum === 1) {
-                this.location1 = location;
-                document.getElementById('location1').value = name;
-            } else {
-                this.location2 = location;
-                document.getElementById('location2').value = name;
-            }
+            this.previewLocations[stepNum] = location;
+            document.getElementById(`location${stepNum}`).value = name;
 
-            this.updateStepMarker(stepNum);
-            this.updateSelectedDisplay(stepNum);
-            this.updateStepButtons();
+            this.updatePreviewMarker(stepNum);
+            this.updatePreviewDisplay(stepNum);
         }
+    }
+
+    // Update preview marker on step map (red, movable)
+    updatePreviewMarker(stepNum) {
+        const location = this.previewLocations[stepNum];
+
+        // Remove existing preview marker
+        if (this.previewMarkers[stepNum]) {
+            this.stepMaps[stepNum].removeLayer(this.previewMarkers[stepNum]);
+        }
+
+        if (location) {
+            // Create a red preview marker
+            const icon = L.divIcon({
+                className: 'custom-marker-wrapper',
+                html: `<div class="custom-marker" style="border-color: #EF4444; color: #EF4444;">?</div>`,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+
+            this.previewMarkers[stepNum] = L.marker([location.lat, location.lon], { icon })
+                .addTo(this.stepMaps[stepNum]);
+        }
+    }
+
+    // Update preview location display
+    updatePreviewDisplay(stepNum) {
+        const location = this.previewLocations[stepNum];
+        const previewEl = document.getElementById(`preview${stepNum}`);
+        const nameEl = previewEl.querySelector('.preview-name');
+
+        if (location) {
+            nameEl.textContent = location.name.split(',').slice(0, 2).join(',');
+            previewEl.style.display = 'flex';
+        } else {
+            previewEl.style.display = 'none';
+        }
+    }
+
+    // Confirm the preview location
+    confirmLocation(stepNum) {
+        const previewLocation = this.previewLocations[stepNum];
+        if (!previewLocation) return;
+
+        // Move preview to confirmed
+        if (stepNum === 1) {
+            this.location1 = previewLocation;
+        } else {
+            this.location2 = previewLocation;
+        }
+
+        // Clear preview
+        this.previewLocations[stepNum] = null;
+        document.getElementById(`preview${stepNum}`).style.display = 'none';
+
+        // Remove preview marker and add confirmed marker
+        if (this.previewMarkers[stepNum]) {
+            this.stepMaps[stepNum].removeLayer(this.previewMarkers[stepNum]);
+            this.previewMarkers[stepNum] = null;
+        }
+
+        // Update confirmed marker and display
+        this.updateStepMarker(stepNum);
+        this.updateSelectedDisplay(stepNum);
+        this.updateStepButtons();
     }
 
     // Update marker on step map
@@ -219,6 +288,7 @@ class MeetInTheMiddle {
 
     // Clear a location
     clearLocation(locationNum) {
+        // Clear confirmed location
         if (locationNum === 1) {
             this.location1 = null;
             document.getElementById('location1').value = '';
@@ -227,7 +297,15 @@ class MeetInTheMiddle {
             document.getElementById('location2').value = '';
         }
 
-        // Remove marker
+        // Clear preview state
+        this.previewLocations[locationNum] = null;
+        if (this.previewMarkers[locationNum]) {
+            this.stepMaps[locationNum].removeLayer(this.previewMarkers[locationNum]);
+            this.previewMarkers[locationNum] = null;
+        }
+        document.getElementById(`preview${locationNum}`).style.display = 'none';
+
+        // Remove confirmed marker
         if (this.stepMarkers[locationNum]) {
             this.stepMaps[locationNum].removeLayer(this.stepMarkers[locationNum]);
             this.stepMarkers[locationNum] = null;
@@ -396,25 +474,30 @@ class MeetInTheMiddle {
         return '';
     }
 
-    // Select a location from suggestions
+    // Select a location from suggestions - goes to preview state
     selectLocation(item, locationNum) {
+        // Don't allow if location is already confirmed
+        const confirmedLocation = locationNum === 1 ? this.location1 : this.location2;
+        if (confirmedLocation) {
+            this.closeSuggestions(locationNum);
+            return;
+        }
+
         const lat = parseFloat(item.dataset.lat);
         const lon = parseFloat(item.dataset.lon);
         const name = item.dataset.name;
         const location = { lat, lon, name };
 
-        if (locationNum === 1) {
-            this.location1 = location;
-            document.getElementById('location1').value = name;
-        } else {
-            this.location2 = location;
-            document.getElementById('location2').value = name;
-        }
+        // Set as preview (not confirmed)
+        this.previewLocations[locationNum] = location;
+        document.getElementById(`location${locationNum}`).value = name;
 
         this.closeSuggestions(locationNum);
-        this.updateStepMarker(locationNum);
-        this.updateSelectedDisplay(locationNum);
-        this.updateStepButtons();
+        this.updatePreviewMarker(locationNum);
+        this.updatePreviewDisplay(locationNum);
+
+        // Center map on the selected location
+        this.stepMaps[locationNum].setView([lat, lon], 12);
     }
 
     // Close suggestions dropdown
