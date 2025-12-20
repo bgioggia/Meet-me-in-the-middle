@@ -4,6 +4,7 @@ class MeetInTheMiddle {
     constructor() {
         // State
         this.map = null;
+        this.pickerMap = null;
         this.location1 = null;
         this.location2 = null;
         this.midpoint = null;
@@ -15,6 +16,14 @@ class MeetInTheMiddle {
             midpoint: null,
             places: []
         };
+        this.pickerMarkers = {
+            location1: null,
+            location2: null
+        };
+
+        // Picker state
+        this.pickerActive = false;
+        this.pickerLocationNum = null;
 
         // Debounce timers
         this.searchTimers = {};
@@ -25,6 +34,7 @@ class MeetInTheMiddle {
 
     init() {
         this.initMap();
+        this.initPickerMap();
         this.bindEvents();
         this.checkInputs();
     }
@@ -39,6 +49,21 @@ class MeetInTheMiddle {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(this.map);
+    }
+
+    // Initialize the location picker map
+    initPickerMap() {
+        // Create picker map (initially hidden, will be shown when user clicks picker button)
+        this.pickerMap = L.map('pickerMap').setView([39.8283, -98.5795], 4);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(this.pickerMap);
+
+        // Handle click on picker map
+        this.pickerMap.on('click', (e) => this.handlePickerMapClick(e));
     }
 
     // Bind all event listeners
@@ -56,6 +81,14 @@ class MeetInTheMiddle {
                 this.closeSuggestions();
             }
         });
+
+        // Map select buttons
+        document.querySelectorAll('.map-select-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.handleMapSelectClick(e));
+        });
+
+        // Cancel picker button
+        document.getElementById('cancelPicker').addEventListener('click', () => this.closePicker());
 
         // Category buttons
         document.querySelectorAll('.category-btn').forEach(btn => {
@@ -238,6 +271,183 @@ class MeetInTheMiddle {
         }
 
         return '';
+    }
+
+    // Handle click on map select button
+    handleMapSelectClick(event) {
+        const btn = event.currentTarget;
+        const locationNum = parseInt(btn.dataset.location);
+
+        // Toggle picker
+        if (this.pickerActive && this.pickerLocationNum === locationNum) {
+            this.closePicker();
+        } else {
+            this.openPicker(locationNum);
+        }
+    }
+
+    // Open the location picker
+    openPicker(locationNum) {
+        this.pickerActive = true;
+        this.pickerLocationNum = locationNum;
+
+        // Update UI
+        document.querySelectorAll('.map-select-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.map-select-btn[data-location="${locationNum}"]`).classList.add('active');
+
+        // Update picker label
+        const label = locationNum === 1 ? 'Location A' : 'Location B';
+        document.getElementById('pickerTarget').textContent = label;
+
+        // Show picker container
+        const container = document.getElementById('pickerMapContainer');
+        container.style.display = 'block';
+
+        // Invalidate map size and update view
+        setTimeout(() => {
+            this.pickerMap.invalidateSize();
+
+            // If we have existing locations, center on them or between them
+            if (this.location1 && this.location2) {
+                const bounds = L.latLngBounds(
+                    [this.location1.lat, this.location1.lon],
+                    [this.location2.lat, this.location2.lon]
+                );
+                this.pickerMap.fitBounds(bounds, { padding: [30, 30] });
+            } else if (this.location1) {
+                this.pickerMap.setView([this.location1.lat, this.location1.lon], 10);
+            } else if (this.location2) {
+                this.pickerMap.setView([this.location2.lat, this.location2.lon], 10);
+            }
+
+            // Update picker markers
+            this.updatePickerMarkers();
+        }, 100);
+    }
+
+    // Close the location picker
+    closePicker() {
+        this.pickerActive = false;
+        this.pickerLocationNum = null;
+
+        // Update UI
+        document.querySelectorAll('.map-select-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('pickerMapContainer').style.display = 'none';
+    }
+
+    // Update markers on the picker map
+    updatePickerMarkers() {
+        // Clear existing picker markers
+        if (this.pickerMarkers.location1) {
+            this.pickerMap.removeLayer(this.pickerMarkers.location1);
+            this.pickerMarkers.location1 = null;
+        }
+        if (this.pickerMarkers.location2) {
+            this.pickerMap.removeLayer(this.pickerMarkers.location2);
+            this.pickerMarkers.location2 = null;
+        }
+
+        // Add marker for location 1 if exists
+        if (this.location1) {
+            const icon = L.divIcon({
+                className: 'custom-marker-wrapper',
+                html: `<div class="custom-marker marker-a">A</div>`,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+            this.pickerMarkers.location1 = L.marker([this.location1.lat, this.location1.lon], { icon })
+                .addTo(this.pickerMap);
+        }
+
+        // Add marker for location 2 if exists
+        if (this.location2) {
+            const icon = L.divIcon({
+                className: 'custom-marker-wrapper',
+                html: `<div class="custom-marker marker-b">B</div>`,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+            this.pickerMarkers.location2 = L.marker([this.location2.lat, this.location2.lon], { icon })
+                .addTo(this.pickerMap);
+        }
+    }
+
+    // Handle click on picker map
+    async handlePickerMapClick(event) {
+        if (!this.pickerActive) return;
+
+        const { lat, lng: lon } = event.latlng;
+
+        // Show loading state on button
+        const btn = document.querySelector(`.map-select-btn[data-location="${this.pickerLocationNum}"]`);
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span>';
+
+        try {
+            // Reverse geocode the clicked location
+            const name = await this.reverseGeocode(lat, lon);
+
+            // Create location object
+            const location = { lat, lon, name };
+
+            // Update state
+            if (this.pickerLocationNum === 1) {
+                this.location1 = location;
+                document.getElementById('location1').value = name;
+            } else {
+                this.location2 = location;
+                document.getElementById('location2').value = name;
+            }
+
+            // Update markers
+            this.updateLocationMarker(this.pickerLocationNum);
+            this.updatePickerMarkers();
+            this.checkInputs();
+
+            // Close picker
+            this.closePicker();
+
+        } catch (error) {
+            console.error('Reverse geocoding failed:', error);
+            // Use coordinates as fallback name
+            const name = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            const location = { lat, lon, name };
+
+            if (this.pickerLocationNum === 1) {
+                this.location1 = location;
+                document.getElementById('location1').value = name;
+            } else {
+                this.location2 = location;
+                document.getElementById('location2').value = name;
+            }
+
+            this.updateLocationMarker(this.pickerLocationNum);
+            this.updatePickerMarkers();
+            this.checkInputs();
+            this.closePicker();
+        }
+
+        // Restore button icon
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+        </svg>`;
+    }
+
+    // Reverse geocode coordinates to get address
+    async reverseGeocode(lat, lon) {
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+            {
+                headers: {
+                    'Accept': 'application/json'
+                }
+            }
+        );
+
+        if (!response.ok) throw new Error('Reverse geocoding failed');
+
+        const data = await response.json();
+        return data.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     }
 
     // Check if both inputs are filled to enable button
