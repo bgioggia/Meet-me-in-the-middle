@@ -101,8 +101,24 @@ class MeetInTheMiddle {
     // Search for locations using Nominatim
     async searchLocations(query, locationNum) {
         try {
+            // Use more flexible search parameters to handle general queries
+            // - dedupe=1: Remove duplicate results
+            // - addressdetails=1: Include address breakdown
+            // - extratags=1: Include additional info
+            // - namedetails=1: Include name variants
+            // - limit=8: More results for better matching
+            const params = new URLSearchParams({
+                format: 'json',
+                q: query,
+                limit: '8',
+                addressdetails: '1',
+                extratags: '1',
+                namedetails: '1',
+                dedupe: '1'
+            });
+
             const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
+                `https://nominatim.openstreetmap.org/search?${params}`,
                 {
                     headers: {
                         'Accept': 'application/json'
@@ -129,11 +145,31 @@ class MeetInTheMiddle {
         }
 
         suggestionsEl.innerHTML = results.map(result => {
-            const name = result.display_name.split(',')[0];
-            const address = result.display_name.split(',').slice(1, 3).join(',');
+            // Better formatting for different location types
+            const parts = result.display_name.split(',').map(p => p.trim());
+            let name = parts[0];
+            let address = '';
+
+            // For cities/towns, show state/country context
+            const type = result.type || '';
+            const category = result.class || '';
+
+            if (['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'county', 'state'].includes(type)) {
+                // For places, show more context
+                address = parts.slice(1, 4).join(', ');
+            } else if (category === 'boundary' || category === 'place') {
+                address = parts.slice(1, 3).join(', ');
+            } else {
+                // For specific addresses/POIs
+                address = parts.slice(1, 3).join(', ');
+            }
+
+            // Add type badge for clarity
+            const typeLabel = this.getLocationTypeLabel(type, category);
+
             return `
                 <div class="suggestion-item" data-lat="${result.lat}" data-lon="${result.lon}" data-name="${result.display_name}">
-                    <div class="name">${name}</div>
+                    <div class="name">${name}${typeLabel ? ` <span class="type-badge">${typeLabel}</span>` : ''}</div>
                     <div class="address">${address}</div>
                 </div>
             `;
@@ -175,6 +211,33 @@ class MeetInTheMiddle {
         } else {
             document.querySelectorAll('.suggestions').forEach(el => el.classList.remove('active'));
         }
+    }
+
+    // Get human-readable label for location type
+    getLocationTypeLabel(type, category) {
+        const typeLabels = {
+            'city': 'City',
+            'town': 'Town',
+            'village': 'Village',
+            'suburb': 'Neighborhood',
+            'neighbourhood': 'Neighborhood',
+            'county': 'County',
+            'state': 'State',
+            'country': 'Country',
+            'hamlet': 'Village',
+            'administrative': 'Area'
+        };
+
+        if (typeLabels[type]) {
+            return typeLabels[type];
+        }
+
+        // Check category for other types
+        if (category === 'amenity' || category === 'shop' || category === 'tourism') {
+            return 'Place';
+        }
+
+        return '';
     }
 
     // Check if both inputs are filled to enable button
@@ -309,25 +372,84 @@ class MeetInTheMiddle {
 
     // Search for places using Overpass API
     async searchPlaces(midpoint, category) {
-        // Map category to Overpass amenity types
-        const categoryMap = {
-            'restaurant': 'restaurant',
-            'cafe': 'cafe',
-            'bar': 'bar|pub',
-            'fast_food': 'fast_food'
+        // Category configurations with OSM tag mappings
+        const categoryConfig = {
+            'restaurant': {
+                tags: [{ key: 'amenity', value: 'restaurant' }]
+            },
+            'cafe': {
+                tags: [{ key: 'amenity', value: 'cafe' }]
+            },
+            'bar': {
+                tags: [{ key: 'amenity', value: 'bar|pub' }]
+            },
+            'fast_food': {
+                tags: [{ key: 'amenity', value: 'fast_food' }]
+            },
+            'park': {
+                tags: [
+                    { key: 'leisure', value: 'park' },
+                    { key: 'leisure', value: 'garden' },
+                    { key: 'leisure', value: 'nature_reserve' }
+                ]
+            },
+            'cinema': {
+                tags: [
+                    { key: 'amenity', value: 'cinema' },
+                    { key: 'amenity', value: 'theatre' }
+                ]
+            },
+            'museum': {
+                tags: [
+                    { key: 'tourism', value: 'museum' },
+                    { key: 'tourism', value: 'gallery' }
+                ]
+            },
+            'shopping': {
+                tags: [
+                    { key: 'shop', value: 'mall' },
+                    { key: 'shop', value: 'department_store' },
+                    { key: 'shop', value: 'supermarket' }
+                ]
+            },
+            'library': {
+                tags: [{ key: 'amenity', value: 'library' }]
+            },
+            'gym': {
+                tags: [
+                    { key: 'leisure', value: 'fitness_centre' },
+                    { key: 'leisure', value: 'sports_centre' },
+                    { key: 'amenity', value: 'gym' }
+                ]
+            },
+            'hotel': {
+                tags: [
+                    { key: 'tourism', value: 'hotel' },
+                    { key: 'tourism', value: 'motel' }
+                ]
+            },
+            'bowling': {
+                tags: [{ key: 'leisure', value: 'bowling_alley' }]
+            }
         };
 
-        const amenityType = categoryMap[category] || 'restaurant';
+        const config = categoryConfig[category] || categoryConfig['restaurant'];
 
         // Search within ~8km radius (good for meeting in the middle)
         const radius = 8000;
 
-        // Build Overpass query
+        // Build Overpass query with multiple tag types
+        const tagQueries = config.tags.map(tag => {
+            return `
+                node["${tag.key}"~"${tag.value}"](around:${radius},${midpoint.lat},${midpoint.lon});
+                way["${tag.key}"~"${tag.value}"](around:${radius},${midpoint.lat},${midpoint.lon});
+            `;
+        }).join('');
+
         const query = `
             [out:json][timeout:25];
             (
-                node["amenity"~"${amenityType}"](around:${radius},${midpoint.lat},${midpoint.lon});
-                way["amenity"~"${amenityType}"](around:${radius},${midpoint.lat},${midpoint.lon});
+                ${tagQueries}
             );
             out center body;
         `;
@@ -452,7 +574,15 @@ class MeetInTheMiddle {
             'restaurant': '🍽️',
             'cafe': '☕',
             'bar': '🍺',
-            'fast_food': '🍔'
+            'fast_food': '🍔',
+            'park': '🌳',
+            'cinema': '🎬',
+            'museum': '🏛️',
+            'shopping': '🛍️',
+            'library': '📚',
+            'gym': '💪',
+            'hotel': '🏨',
+            'bowling': '🎳'
         };
         return emojis[this.selectedCategory] || '📍';
     }
