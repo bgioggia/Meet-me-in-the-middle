@@ -26,114 +26,204 @@
             <p class="tagline">Find the perfect spot between two locations</p>
         </header>
 
-        <!-- Location Input Section -->
-        <section class="input-section">
-            <div class="location-inputs">
-                <div class="input-group">
-                    <label for="location1">
-                        <span class="marker marker-a">A</span>
-                        First Location
-                    </label>
-                    <div class="input-with-map-btn">
-                        <input type="text" id="location1" placeholder="Enter address or place name" autocomplete="off">
-                        <button type="button" class="map-select-btn" data-location="1" title="Select on map">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                <circle cx="12" cy="10" r="3"></circle>
-                            </svg>
-                        </button>
+        <!-- Progress Steps -->
+        <div class="progress-steps">
+            <div class="step active" data-step="1">
+                <span class="step-number">1</span>
+                <span class="step-label">First Location</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="2">
+                <span class="step-number">2</span>
+                <span class="step-label">Second Location</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="3">
+                <span class="step-number">3</span>
+                <span class="step-label">Find Places</span>
+            </div>
+        </div>
+
+        <!-- Step 1: First Location -->
+        <section class="wizard-step active" id="step1">
+            <div class="step-card">
+                <div class="step-header">
+                    <span class="marker marker-a">A</span>
+                    <div>
+                        <h2>Where are you starting from?</h2>
+                        <p>Click on the map or search for a location</p>
                     </div>
+                </div>
+
+                <div class="location-search">
+                    <input type="text" id="location1" placeholder="Search for an address or place..." autocomplete="off">
                     <div class="suggestions" id="suggestions1"></div>
                 </div>
 
-                <div class="input-group">
-                    <label for="location2">
-                        <span class="marker marker-b">B</span>
-                        Second Location
-                    </label>
-                    <div class="input-with-map-btn">
-                        <input type="text" id="location2" placeholder="Enter address or place name" autocomplete="off">
-                        <button type="button" class="map-select-btn" data-location="2" title="Select on map">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                <circle cx="12" cy="10" r="3"></circle>
-                            </svg>
-                        </button>
+                <div class="step-map-container">
+                    <div id="stepMap1" class="step-map"></div>
+                </div>
+
+                <div class="selected-location" id="selected1" style="display: none;">
+                    <span class="selected-icon">📍</span>
+                    <span class="selected-name"></span>
+                    <button type="button" class="clear-btn" data-location="1">Change</button>
+                </div>
+
+                <div class="step-actions">
+                    <button type="button" class="next-btn" id="next1" disabled>
+                        Continue to Second Location
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 2: Second Location -->
+        <section class="wizard-step" id="step2">
+            <div class="step-card">
+                <div class="step-header">
+                    <span class="marker marker-b">B</span>
+                    <div>
+                        <h2>Where is the other person?</h2>
+                        <p>Click on the map or search for their location</p>
                     </div>
+                </div>
+
+                <div class="location-search">
+                    <input type="text" id="location2" placeholder="Search for an address or place..." autocomplete="off">
                     <div class="suggestions" id="suggestions2"></div>
                 </div>
-            </div>
 
-            <!-- Location Picker Map -->
-            <div id="pickerMapContainer" class="picker-map-container" style="display: none;">
-                <div class="picker-header">
-                    <span class="picker-label">Click on the map to select <strong id="pickerTarget">Location A</strong></span>
-                    <button type="button" id="cancelPicker" class="cancel-picker-btn">Cancel</button>
+                <div class="step-map-container">
+                    <div id="stepMap2" class="step-map"></div>
                 </div>
-                <div id="pickerMap" class="picker-map"></div>
-            </div>
 
-            <div class="category-section">
-                <label>What are you looking for?</label>
-                <div class="category-buttons">
-                    <button class="category-btn active" data-category="restaurant">
-                        <span class="icon">🍽️</span>
-                        Restaurants
+                <div class="selected-location" id="selected2" style="display: none;">
+                    <span class="selected-icon">📍</span>
+                    <span class="selected-name"></span>
+                    <button type="button" class="clear-btn" data-location="2">Change</button>
+                </div>
+
+                <div class="step-actions">
+                    <button type="button" class="back-btn" id="back2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        Back
                     </button>
-                    <button class="category-btn" data-category="cafe">
-                        <span class="icon">☕</span>
-                        Cafes
-                    </button>
-                    <button class="category-btn" data-category="bar">
-                        <span class="icon">🍺</span>
-                        Bars
-                    </button>
-                    <button class="category-btn" data-category="fast_food">
-                        <span class="icon">🍔</span>
-                        Fast Food
-                    </button>
-                    <button class="category-btn" data-category="park">
-                        <span class="icon">🌳</span>
-                        Parks
-                    </button>
-                    <button class="category-btn" data-category="cinema">
-                        <span class="icon">🎬</span>
-                        Movies
-                    </button>
-                    <button class="category-btn" data-category="museum">
-                        <span class="icon">🏛️</span>
-                        Museums
-                    </button>
-                    <button class="category-btn" data-category="shopping">
-                        <span class="icon">🛍️</span>
-                        Shopping
-                    </button>
-                    <button class="category-btn" data-category="library">
-                        <span class="icon">📚</span>
-                        Libraries
-                    </button>
-                    <button class="category-btn" data-category="gym">
-                        <span class="icon">💪</span>
-                        Gyms
-                    </button>
-                    <button class="category-btn" data-category="hotel">
-                        <span class="icon">🏨</span>
-                        Hotels
-                    </button>
-                    <button class="category-btn" data-category="bowling">
-                        <span class="icon">🎳</span>
-                        Bowling
+                    <button type="button" class="next-btn" id="next2" disabled>
+                        Continue to Find Places
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
                     </button>
                 </div>
             </div>
+        </section>
 
-            <button id="findMiddle" class="find-btn" disabled>
-                <span class="btn-text">Find Meeting Spots</span>
-                <span class="btn-loading" style="display: none;">
-                    <span class="spinner"></span>
-                    Searching...
-                </span>
-            </button>
+        <!-- Step 3: Category Selection -->
+        <section class="wizard-step" id="step3">
+            <div class="step-card">
+                <div class="step-header">
+                    <span class="marker marker-mid">M</span>
+                    <div>
+                        <h2>What are you looking for?</h2>
+                        <p>Choose a category to find places in the middle</p>
+                    </div>
+                </div>
+
+                <!-- Location Summary -->
+                <div class="locations-summary">
+                    <div class="summary-location">
+                        <span class="marker marker-a small">A</span>
+                        <span class="summary-name" id="summaryLocation1">-</span>
+                        <button type="button" class="edit-btn" data-goto="1">Edit</button>
+                    </div>
+                    <div class="summary-connector">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </div>
+                    <div class="summary-location">
+                        <span class="marker marker-b small">B</span>
+                        <span class="summary-name" id="summaryLocation2">-</span>
+                        <button type="button" class="edit-btn" data-goto="2">Edit</button>
+                    </div>
+                </div>
+
+                <div class="category-section">
+                    <div class="category-buttons">
+                        <button class="category-btn active" data-category="restaurant">
+                            <span class="icon">🍽️</span>
+                            Restaurants
+                        </button>
+                        <button class="category-btn" data-category="cafe">
+                            <span class="icon">☕</span>
+                            Cafes
+                        </button>
+                        <button class="category-btn" data-category="bar">
+                            <span class="icon">🍺</span>
+                            Bars
+                        </button>
+                        <button class="category-btn" data-category="fast_food">
+                            <span class="icon">🍔</span>
+                            Fast Food
+                        </button>
+                        <button class="category-btn" data-category="park">
+                            <span class="icon">🌳</span>
+                            Parks
+                        </button>
+                        <button class="category-btn" data-category="cinema">
+                            <span class="icon">🎬</span>
+                            Movies
+                        </button>
+                        <button class="category-btn" data-category="museum">
+                            <span class="icon">🏛️</span>
+                            Museums
+                        </button>
+                        <button class="category-btn" data-category="shopping">
+                            <span class="icon">🛍️</span>
+                            Shopping
+                        </button>
+                        <button class="category-btn" data-category="library">
+                            <span class="icon">📚</span>
+                            Libraries
+                        </button>
+                        <button class="category-btn" data-category="gym">
+                            <span class="icon">💪</span>
+                            Gyms
+                        </button>
+                        <button class="category-btn" data-category="hotel">
+                            <span class="icon">🏨</span>
+                            Hotels
+                        </button>
+                        <button class="category-btn" data-category="bowling">
+                            <span class="icon">🎳</span>
+                            Bowling
+                        </button>
+                    </div>
+                </div>
+
+                <div class="step-actions">
+                    <button type="button" class="back-btn" id="back3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="find-btn" id="findMiddle">
+                        <span class="btn-text">Find Meeting Spots</span>
+                        <span class="btn-loading" style="display: none;">
+                            <span class="spinner"></span>
+                            Searching...
+                        </span>
+                    </button>
+                </div>
+            </div>
         </section>
 
         <!-- View Toggle -->
