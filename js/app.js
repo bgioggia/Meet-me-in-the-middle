@@ -9,15 +9,18 @@ class MeetInTheMiddle {
         this.location2 = null;
         this.midpoint = null;
         this.selectedCategory = 'restaurant';
-        this.places = [];
         this.currentStep = 1;
         this.markers = {
             location1: null,
             location2: null,
-            midpoint: null,
-            places: []
+            midpoint: null
         };
         this.stepMarkers = {};
+
+        // Multi-category state
+        this.activeCategories = new Set();
+        this.placesByCategory = {};      // Cache of fetched places by category
+        this.markersByCategory = {};     // Markers on map by category
 
         // Preview state (before confirming)
         this.previewLocations = { 1: null, 2: null };
@@ -25,6 +28,43 @@ class MeetInTheMiddle {
 
         // Debounce timers
         this.searchTimers = {};
+
+        // Category configuration
+        this.categoryConfig = {
+            'restaurant': { tags: [{ key: 'amenity', value: 'restaurant' }] },
+            'cafe': { tags: [{ key: 'amenity', value: 'cafe' }] },
+            'bar': { tags: [{ key: 'amenity', value: 'bar|pub' }] },
+            'fast_food': { tags: [{ key: 'amenity', value: 'fast_food' }] },
+            'park': { tags: [
+                { key: 'leisure', value: 'park' },
+                { key: 'leisure', value: 'garden' },
+                { key: 'leisure', value: 'nature_reserve' }
+            ]},
+            'cinema': { tags: [
+                { key: 'amenity', value: 'cinema' },
+                { key: 'amenity', value: 'theatre' }
+            ]},
+            'museum': { tags: [
+                { key: 'tourism', value: 'museum' },
+                { key: 'tourism', value: 'gallery' }
+            ]},
+            'shopping': { tags: [
+                { key: 'shop', value: 'mall' },
+                { key: 'shop', value: 'department_store' },
+                { key: 'shop', value: 'supermarket' }
+            ]},
+            'library': { tags: [{ key: 'amenity', value: 'library' }] },
+            'gym': { tags: [
+                { key: 'leisure', value: 'fitness_centre' },
+                { key: 'leisure', value: 'sports_centre' },
+                { key: 'amenity', value: 'gym' }
+            ]},
+            'hotel': { tags: [
+                { key: 'tourism', value: 'hotel' },
+                { key: 'tourism', value: 'motel' }
+            ]},
+            'bowling': { tags: [{ key: 'leisure', value: 'bowling_alley' }] }
+        };
 
         // Initialize the app
         this.init();
@@ -123,6 +163,11 @@ class MeetInTheMiddle {
         // View toggle
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.handleViewToggle(e));
+        });
+
+        // Category toggles (on results page)
+        document.querySelectorAll('.category-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => this.handleCategoryToggle(e));
         });
     }
 
@@ -555,10 +600,25 @@ class MeetInTheMiddle {
 
         try {
             this.midpoint = this.calculateMidpoint(this.location1, this.location2);
-            this.places = await this.searchPlaces(this.midpoint, this.selectedCategory);
 
-            this.updateResultsMap();
-            this.updateList();
+            // Reset multi-category state
+            this.activeCategories.clear();
+            this.placesByCategory = {};
+            this.markersByCategory = {};
+
+            // Initialize the base map (locations + midpoint)
+            this.initResultsMapBase();
+
+            // Load the initially selected category
+            await this.loadCategory(this.selectedCategory);
+            this.activeCategories.add(this.selectedCategory);
+            this.addCategoryMarkers(this.selectedCategory);
+
+            // Update toggle UI
+            this.updateCategoryToggleUI();
+
+            // Update list view
+            this.updateListFromActiveCategories();
 
             // Hide wizard, show results
             document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
@@ -574,6 +634,123 @@ class MeetInTheMiddle {
         } finally {
             this.setLoading(false);
         }
+    }
+
+    // Handle category toggle on results page
+    async handleCategoryToggle(event) {
+        const btn = event.currentTarget;
+        const category = btn.dataset.category;
+
+        if (this.activeCategories.has(category)) {
+            // Turn OFF - remove markers
+            this.activeCategories.delete(category);
+            this.removeCategoryMarkers(category);
+            btn.classList.remove('active');
+        } else {
+            // Turn ON - add markers (fetch if needed)
+            btn.classList.add('loading');
+
+            try {
+                await this.loadCategory(category);
+                this.activeCategories.add(category);
+                this.addCategoryMarkers(category);
+                btn.classList.add('active');
+            } catch (error) {
+                console.error(`Failed to load ${category}:`, error);
+            } finally {
+                btn.classList.remove('loading');
+            }
+        }
+
+        // Update list view
+        this.updateListFromActiveCategories();
+    }
+
+    // Load places for a category (fetch if not cached)
+    async loadCategory(category) {
+        if (!this.placesByCategory[category]) {
+            const places = await this.searchPlaces(this.midpoint, category);
+            this.placesByCategory[category] = places;
+        }
+        return this.placesByCategory[category];
+    }
+
+    // Add markers for a category to the map
+    addCategoryMarkers(category) {
+        const places = this.placesByCategory[category] || [];
+        if (!this.markersByCategory[category]) {
+            this.markersByCategory[category] = [];
+        }
+
+        places.forEach(place => {
+            const icon = L.divIcon({
+                className: 'place-marker-wrapper',
+                html: `<div class="place-marker">${this.getCategoryEmoji(category)}</div>`,
+                iconSize: [32, 32], iconAnchor: [16, 16]
+            });
+            const marker = L.marker([place.lat, place.lon], { icon })
+                .addTo(this.map)
+                .bindPopup(this.createPopupContent(place, category));
+            this.markersByCategory[category].push(marker);
+        });
+    }
+
+    // Remove markers for a category from the map
+    removeCategoryMarkers(category) {
+        const markers = this.markersByCategory[category] || [];
+        markers.forEach(marker => this.map.removeLayer(marker));
+        this.markersByCategory[category] = [];
+    }
+
+    // Update category toggle button UI
+    updateCategoryToggleUI() {
+        document.querySelectorAll('.category-toggle').forEach(btn => {
+            const category = btn.dataset.category;
+            if (this.activeCategories.has(category)) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    // Initialize base map with location markers and midpoint
+    initResultsMapBase() {
+        // Clear existing markers
+        if (this.markers.midpoint) this.map.removeLayer(this.markers.midpoint);
+        if (this.markers.location1) this.map.removeLayer(this.markers.location1);
+        if (this.markers.location2) this.map.removeLayer(this.markers.location2);
+
+        // Clear all category markers
+        Object.keys(this.markersByCategory).forEach(cat => {
+            this.removeCategoryMarkers(cat);
+        });
+
+        // Add location markers
+        const iconA = L.divIcon({
+            className: 'custom-marker-wrapper',
+            html: `<div class="custom-marker marker-a">A</div>`,
+            iconSize: [36, 36], iconAnchor: [18, 18]
+        });
+        this.markers.location1 = L.marker([this.location1.lat, this.location1.lon], { icon: iconA })
+            .addTo(this.map).bindPopup(`<strong>A: ${this.location1.name.split(',')[0]}</strong>`);
+
+        const iconB = L.divIcon({
+            className: 'custom-marker-wrapper',
+            html: `<div class="custom-marker marker-b">B</div>`,
+            iconSize: [36, 36], iconAnchor: [18, 18]
+        });
+        this.markers.location2 = L.marker([this.location2.lat, this.location2.lon], { icon: iconB })
+            .addTo(this.map).bindPopup(`<strong>B: ${this.location2.name.split(',')[0]}</strong>`);
+
+        // Add midpoint marker
+        const midpointIcon = L.divIcon({
+            className: 'custom-marker-wrapper',
+            html: `<div class="custom-marker marker-mid">M</div>`,
+            iconSize: [36, 36], iconAnchor: [18, 18]
+        });
+        this.markers.midpoint = L.marker([this.midpoint.lat, this.midpoint.lon], { icon: midpointIcon })
+            .addTo(this.map).bindPopup('<strong>Midpoint</strong>');
     }
 
     // Calculate geographic midpoint
@@ -600,43 +777,7 @@ class MeetInTheMiddle {
 
     // Search for places using Overpass API
     async searchPlaces(midpoint, category) {
-        const categoryConfig = {
-            'restaurant': { tags: [{ key: 'amenity', value: 'restaurant' }] },
-            'cafe': { tags: [{ key: 'amenity', value: 'cafe' }] },
-            'bar': { tags: [{ key: 'amenity', value: 'bar|pub' }] },
-            'fast_food': { tags: [{ key: 'amenity', value: 'fast_food' }] },
-            'park': { tags: [
-                { key: 'leisure', value: 'park' },
-                { key: 'leisure', value: 'garden' },
-                { key: 'leisure', value: 'nature_reserve' }
-            ]},
-            'cinema': { tags: [
-                { key: 'amenity', value: 'cinema' },
-                { key: 'amenity', value: 'theatre' }
-            ]},
-            'museum': { tags: [
-                { key: 'tourism', value: 'museum' },
-                { key: 'tourism', value: 'gallery' }
-            ]},
-            'shopping': { tags: [
-                { key: 'shop', value: 'mall' },
-                { key: 'shop', value: 'department_store' },
-                { key: 'shop', value: 'supermarket' }
-            ]},
-            'library': { tags: [{ key: 'amenity', value: 'library' }] },
-            'gym': { tags: [
-                { key: 'leisure', value: 'fitness_centre' },
-                { key: 'leisure', value: 'sports_centre' },
-                { key: 'amenity', value: 'gym' }
-            ]},
-            'hotel': { tags: [
-                { key: 'tourism', value: 'hotel' },
-                { key: 'tourism', value: 'motel' }
-            ]},
-            'bowling': { tags: [{ key: 'leisure', value: 'bowling_alley' }] }
-        };
-
-        const config = categoryConfig[category] || categoryConfig['restaurant'];
+        const config = this.categoryConfig[category] || this.categoryConfig['restaurant'];
         const radius = 8000;
 
         const tagQueries = config.tags.map(tag => `
@@ -703,65 +844,16 @@ class MeetInTheMiddle {
         return parts.join(' ') || '';
     }
 
-    // Update results map
-    updateResultsMap() {
-        // Clear existing markers
-        this.markers.places.forEach(marker => this.map.removeLayer(marker));
-        this.markers.places = [];
-        if (this.markers.midpoint) this.map.removeLayer(this.markers.midpoint);
-        if (this.markers.location1) this.map.removeLayer(this.markers.location1);
-        if (this.markers.location2) this.map.removeLayer(this.markers.location2);
-
-        // Add location markers
-        const iconA = L.divIcon({
-            className: 'custom-marker-wrapper',
-            html: `<div class="custom-marker marker-a">A</div>`,
-            iconSize: [36, 36], iconAnchor: [18, 18]
-        });
-        this.markers.location1 = L.marker([this.location1.lat, this.location1.lon], { icon: iconA })
-            .addTo(this.map).bindPopup(`<strong>A: ${this.location1.name.split(',')[0]}</strong>`);
-
-        const iconB = L.divIcon({
-            className: 'custom-marker-wrapper',
-            html: `<div class="custom-marker marker-b">B</div>`,
-            iconSize: [36, 36], iconAnchor: [18, 18]
-        });
-        this.markers.location2 = L.marker([this.location2.lat, this.location2.lon], { icon: iconB })
-            .addTo(this.map).bindPopup(`<strong>B: ${this.location2.name.split(',')[0]}</strong>`);
-
-        // Add midpoint marker
-        const midpointIcon = L.divIcon({
-            className: 'custom-marker-wrapper',
-            html: `<div class="custom-marker marker-mid">M</div>`,
-            iconSize: [36, 36], iconAnchor: [18, 18]
-        });
-        this.markers.midpoint = L.marker([this.midpoint.lat, this.midpoint.lon], { icon: midpointIcon })
-            .addTo(this.map).bindPopup('<strong>Midpoint</strong>');
-
-        // Add place markers
-        this.places.forEach(place => {
-            const icon = L.divIcon({
-                className: 'place-marker-wrapper',
-                html: `<div class="place-marker">${this.getCategoryEmoji()}</div>`,
-                iconSize: [32, 32], iconAnchor: [16, 16]
-            });
-            const marker = L.marker([place.lat, place.lon], { icon })
-                .addTo(this.map)
-                .bindPopup(this.createPopupContent(place));
-            this.markers.places.push(marker);
-        });
-    }
-
-    getCategoryEmoji() {
+    getCategoryEmoji(category) {
         const emojis = {
             'restaurant': '🍽️', 'cafe': '☕', 'bar': '🍺', 'fast_food': '🍔',
             'park': '🌳', 'cinema': '🎬', 'museum': '🏛️', 'shopping': '🛍️',
             'library': '📚', 'gym': '💪', 'hotel': '🏨', 'bowling': '🎳'
         };
-        return emojis[this.selectedCategory] || '📍';
+        return emojis[category] || '📍';
     }
 
-    createPopupContent(place) {
+    createPopupContent(place, category) {
         let content = `<div class="popup-content"><h3>${place.name}</h3>`;
         if (place.cuisine) content += `<div class="cuisine">${place.cuisine.split(';').map(c => c.trim().charAt(0).toUpperCase() + c.trim().slice(1)).join(', ')}</div>`;
         content += `<div class="distance">${place.distanceText} from midpoint</div>`;
@@ -769,19 +861,33 @@ class MeetInTheMiddle {
         return content;
     }
 
-    updateList() {
+    // Update list view from all active categories
+    updateListFromActiveCategories() {
         const listEl = document.getElementById('resultsList');
-        document.querySelector('.results-count').textContent = `${this.places.length} places found`;
 
-        if (this.places.length === 0) {
-            listEl.innerHTML = `<div class="no-results"><h3>No places found</h3><p>Try a different category.</p></div>`;
+        // Combine all places from active categories
+        let allPlaces = [];
+        this.activeCategories.forEach(category => {
+            const places = this.placesByCategory[category] || [];
+            places.forEach(place => {
+                allPlaces.push({ ...place, category });
+            });
+        });
+
+        // Sort by distance
+        allPlaces.sort((a, b) => a.distance - b.distance);
+
+        document.querySelector('.results-count').textContent = `${allPlaces.length} places found`;
+
+        if (allPlaces.length === 0) {
+            listEl.innerHTML = `<div class="no-results"><h3>No places found</h3><p>Toggle on some categories above.</p></div>`;
             return;
         }
 
-        listEl.innerHTML = this.places.map(place => `
+        listEl.innerHTML = allPlaces.map(place => `
             <div class="result-card" data-lat="${place.lat}" data-lon="${place.lon}">
                 <div class="card-header">
-                    <h3>${place.name}</h3>
+                    <h3><span class="card-emoji">${this.getCategoryEmoji(place.category)}</span> ${place.name}</h3>
                     <span class="distance-badge">${place.distanceText}</span>
                 </div>
                 ${place.cuisine ? `<div class="cuisine">${place.cuisine.split(';').map(c => c.trim().charAt(0).toUpperCase() + c.trim().slice(1)).join(', ')}</div>` : ''}
@@ -811,11 +917,14 @@ class MeetInTheMiddle {
         setTimeout(() => {
             this.map.invalidateSize();
             this.map.setView([lat, lon], 16);
-            this.markers.places.forEach(marker => {
-                const pos = marker.getLatLng();
-                if (Math.abs(pos.lat - lat) < 0.0001 && Math.abs(pos.lng - lon) < 0.0001) {
-                    marker.openPopup();
-                }
+            // Find and open popup for the matching marker across all categories
+            Object.values(this.markersByCategory).forEach(markers => {
+                markers.forEach(marker => {
+                    const pos = marker.getLatLng();
+                    if (Math.abs(pos.lat - lat) < 0.0001 && Math.abs(pos.lng - lon) < 0.0001) {
+                        marker.openPopup();
+                    }
+                });
             });
         }, 100);
     }
@@ -824,9 +933,15 @@ class MeetInTheMiddle {
         const points = [
             [this.location1.lat, this.location1.lon],
             [this.location2.lat, this.location2.lon],
-            [this.midpoint.lat, this.midpoint.lon],
-            ...this.places.slice(0, 10).map(p => [p.lat, p.lon])
+            [this.midpoint.lat, this.midpoint.lon]
         ];
+
+        // Add points from all active categories
+        this.activeCategories.forEach(category => {
+            const places = this.placesByCategory[category] || [];
+            places.slice(0, 10).forEach(p => points.push([p.lat, p.lon]));
+        });
+
         this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
     }
 
