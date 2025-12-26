@@ -179,30 +179,29 @@ class MeetInTheMiddle {
 
         const { lat, lng: lon } = event.latlng;
 
+        // Show marker immediately with coordinates as placeholder
+        const coordsName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        const location = { lat, lon, name: coordsName };
+
+        this.previewLocations[stepNum] = location;
+        document.getElementById(`location${stepNum}`).value = coordsName;
+        this.updatePreviewMarker(stepNum);
+        this.updatePreviewDisplay(stepNum);
+
+        // Then fetch the actual address name asynchronously
         try {
-            // Reverse geocode the clicked location
             const name = await this.reverseGeocode(lat, lon);
-            const location = { lat, lon, name };
-
-            // Update preview state
-            this.previewLocations[stepNum] = location;
-            document.getElementById(`location${stepNum}`).value = name;
-
-            // Update preview marker and display
-            this.updatePreviewMarker(stepNum);
-            this.updatePreviewDisplay(stepNum);
-
+            // Only update if this is still the current preview location
+            if (this.previewLocations[stepNum] &&
+                this.previewLocations[stepNum].lat === lat &&
+                this.previewLocations[stepNum].lon === lon) {
+                this.previewLocations[stepNum].name = name;
+                document.getElementById(`location${stepNum}`).value = name;
+                this.updatePreviewDisplay(stepNum);
+            }
         } catch (error) {
             console.error('Reverse geocoding failed:', error);
-            // Use coordinates as fallback
-            const name = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            const location = { lat, lon, name };
-
-            this.previewLocations[stepNum] = location;
-            document.getElementById(`location${stepNum}`).value = name;
-
-            this.updatePreviewMarker(stepNum);
-            this.updatePreviewDisplay(stepNum);
+            // Keep the coordinates as the name (already set)
         }
     }
 
