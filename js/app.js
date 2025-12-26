@@ -198,7 +198,7 @@ class MeetInTheMiddle {
         }
     }
 
-    // Confirm the preview location
+    // Confirm the preview location and advance to next step
     confirmLocation(stepNum) {
         const previewLocation = this.previewLocations[stepNum];
         if (!previewLocation) return;
@@ -224,6 +224,9 @@ class MeetInTheMiddle {
         this.updateStepMarker(stepNum);
         this.updateSelectedDisplay(stepNum);
         this.updateStepButtons();
+
+        // Automatically advance to the next step
+        this.goToStep(stepNum + 1);
     }
 
     // Update marker on step map
