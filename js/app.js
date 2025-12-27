@@ -8,7 +8,7 @@ class MeetInTheMiddle {
         this.location1 = null;
         this.location2 = null;
         this.midpoint = null;
-        this.selectedCategory = 'restaurant';
+        this.selectedCategories = new Set(['restaurant']); // Categories selected on step 3
         this.currentStep = 1;
         this.markers = {
             location1: null,
@@ -572,12 +572,21 @@ class MeetInTheMiddle {
         return data.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     }
 
-    // Handle category selection
+    // Handle category selection on step 3 (toggle multiple)
     handleCategorySelect(event) {
         const btn = event.currentTarget;
-        document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.selectedCategory = btn.dataset.category;
+        const category = btn.dataset.category;
+
+        if (this.selectedCategories.has(category)) {
+            // Don't allow deselecting if it's the last one
+            if (this.selectedCategories.size > 1) {
+                this.selectedCategories.delete(category);
+                btn.classList.remove('active');
+            }
+        } else {
+            this.selectedCategories.add(category);
+            btn.classList.add('active');
+        }
     }
 
     // Handle view toggle
@@ -613,10 +622,15 @@ class MeetInTheMiddle {
             // Initialize the base map (locations + midpoint)
             this.initResultsMapBase();
 
-            // Load the initially selected category
-            await this.loadCategory(this.selectedCategory);
-            this.activeCategories.add(this.selectedCategory);
-            this.addCategoryMarkers(this.selectedCategory);
+            // Load all selected categories in parallel
+            const categoryPromises = Array.from(this.selectedCategories).map(cat => this.loadCategory(cat));
+            await Promise.all(categoryPromises);
+
+            // Add markers for all selected categories
+            this.selectedCategories.forEach(category => {
+                this.activeCategories.add(category);
+                this.addCategoryMarkers(category);
+            });
 
             // Update toggle UI
             this.updateCategoryToggleUI();
