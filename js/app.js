@@ -376,9 +376,14 @@ class MeetInTheMiddle {
             }, 100);
         }
 
-        // If going to step 3, update the summary
+        // If going to step 3, update the summary and preload the results map area
         if (stepNum === 3) {
             this.updateSummary();
+            // Preload results map tiles by setting view to midpoint area
+            if (this.location1 && this.location2) {
+                const preloadMidpoint = this.calculateMidpoint(this.location1, this.location2);
+                this.map.setView([preloadMidpoint.lat, preloadMidpoint.lon], 12);
+            }
         }
 
         // Invalidate map size when showing
@@ -625,7 +630,11 @@ class MeetInTheMiddle {
             document.querySelector('.view-toggle').style.display = 'flex';
             document.querySelector('.results-section').style.display = 'flex';
 
-            this.fitMapToResults();
+            // Invalidate map size after container is visible, then fit bounds
+            setTimeout(() => {
+                this.map.invalidateSize();
+                this.fitMapToResults();
+            }, 50);
 
         } catch (error) {
             console.error('Error finding meeting spots:', error);
