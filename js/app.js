@@ -662,30 +662,40 @@ class MeetInTheMiddle {
     async handleCategoryToggle(event) {
         const btn = event.currentTarget;
         const category = btn.dataset.category;
+        const togglesContainer = document.querySelector('.category-toggles');
+
+        // Prevent multiple simultaneous toggles
+        if (togglesContainer.classList.contains('loading')) return;
 
         if (this.activeCategories.has(category)) {
-            // Turn OFF - remove markers
+            // Turn OFF - remove markers (instant, no loading needed)
             this.activeCategories.delete(category);
             this.removeCategoryMarkers(category);
             btn.classList.remove('active');
+            this.updateListFromActiveCategories();
         } else {
-            // Turn ON - add markers (fetch if needed)
-            btn.classList.add('loading');
+            // Turn ON - need to fetch if not cached
+            const needsFetch = !this.placesByCategory[category];
+
+            if (needsFetch) {
+                // Show loading state and disable all toggles
+                togglesContainer.classList.add('loading');
+                btn.classList.add('loading');
+            }
 
             try {
                 await this.loadCategory(category);
                 this.activeCategories.add(category);
                 this.addCategoryMarkers(category);
                 btn.classList.add('active');
+                this.updateListFromActiveCategories();
             } catch (error) {
                 console.error(`Failed to load ${category}:`, error);
             } finally {
+                togglesContainer.classList.remove('loading');
                 btn.classList.remove('loading');
             }
         }
-
-        // Update list view
-        this.updateListFromActiveCategories();
     }
 
     // Load places for a category (fetch if not cached)
