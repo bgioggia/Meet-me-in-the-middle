@@ -22,6 +22,10 @@ class MeetInTheMiddle {
         this.placesByCategory = {};      // Cache of fetched places by category
         this.markersByCategory = {};     // Markers on map by category
 
+        // Midpoint calculation state
+        this.midpointMethod = null;      // 'driving' or 'geographic'
+        this.searchRadius = null;        // Final radius used (in meters)
+
         // Preview state (before confirming)
         this.previewLocations = { 1: null, 2: null };
         this.previewMarkers = { 1: null, 2: null };
@@ -609,21 +613,76 @@ class MeetInTheMiddle {
     async findMeetingSpots() {
         if (!this.location1 || !this.location2) return;
 
-        this.setLoading(true);
+        this.setLoading(true, 'Calculating driving route...');
 
         try {
-            this.midpoint = this.calculateMidpoint(this.location1, this.location2);
-
-            // Reset multi-category state
+            // Reset state
             this.activeCategories.clear();
             this.placesByCategory = {};
             this.markersByCategory = {};
+            this.midpointMethod = null;
+            this.searchRadius = null;
+
+            const radii = [8000, 12000, 16000, 20000];
+            let foundPlaces = false;
+            const firstCategory = Array.from(this.selectedCategories)[0];
+
+            // Step 1: Try driving route midpoint
+            try {
+                this.setLoading(true, 'Calculating driving route...');
+                this.midpoint = await this.getDrivingMidpoint(this.location1, this.location2);
+                this.midpointMethod = 'driving';
+
+                // Search with expanding radius
+                for (const radius of radii) {
+                    this.setLoading(true, `Searching within ${radius / 1000}km of driving midpoint...`);
+                    const places = await this.searchPlacesWithRadius(this.midpoint, firstCategory, radius);
+                    if (places.length > 0) {
+                        this.placesByCategory[firstCategory] = places;
+                        this.searchRadius = radius;
+                        foundPlaces = true;
+                        break;
+                    }
+                }
+            } catch (routeError) {
+                console.log('Driving route failed, falling back to geographic midpoint:', routeError.message);
+            }
+
+            // Step 2: If driving route failed or yielded no results, try geographic midpoint
+            if (!foundPlaces) {
+                this.setLoading(true, 'Calculating geographic midpoint...');
+                this.midpoint = this.calculateMidpoint(this.location1, this.location2);
+                this.midpointMethod = 'geographic';
+
+                // Search with expanding radius
+                for (const radius of radii) {
+                    this.setLoading(true, `Searching within ${radius / 1000}km of geographic midpoint...`);
+                    const places = await this.searchPlacesWithRadius(this.midpoint, firstCategory, radius);
+                    if (places.length > 0) {
+                        this.placesByCategory[firstCategory] = places;
+                        this.searchRadius = radius;
+                        foundPlaces = true;
+                        break;
+                    }
+                }
+
+                // If still no results, use the largest radius
+                if (!foundPlaces) {
+                    this.searchRadius = radii[radii.length - 1];
+                    this.placesByCategory[firstCategory] = [];
+                }
+            }
 
             // Initialize the base map (locations + midpoint)
             this.initResultsMapBase();
 
-            // Load all selected categories in parallel
-            const categoryPromises = Array.from(this.selectedCategories).map(cat => this.loadCategory(cat));
+            // Load remaining selected categories in parallel (using cached midpoint and radius)
+            this.setLoading(true, 'Loading additional categories...');
+            const remainingCategories = Array.from(this.selectedCategories).slice(1);
+            const categoryPromises = remainingCategories.map(async cat => {
+                const places = await this.searchPlacesWithRadius(this.midpoint, cat, this.searchRadius);
+                this.placesByCategory[cat] = places;
+            });
             await Promise.all(categoryPromises);
 
             // Add markers for all selected categories
@@ -637,6 +696,9 @@ class MeetInTheMiddle {
 
             // Update list view
             this.updateListFromActiveCategories();
+
+            // Update method indicator
+            this.updateMethodIndicator();
 
             // Hide wizard, show results
             document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
@@ -656,6 +718,25 @@ class MeetInTheMiddle {
         } finally {
             this.setLoading(false);
         }
+    }
+
+    // Update the method indicator in the results section
+    updateMethodIndicator() {
+        let indicator = document.getElementById('methodIndicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'methodIndicator';
+            indicator.className = 'method-indicator';
+            document.querySelector('.category-toggles').insertAdjacentElement('beforebegin', indicator);
+        }
+
+        const methodText = this.midpointMethod === 'driving' ? 'driving route' : 'geographic';
+        const radiusKm = this.searchRadius / 1000;
+
+        indicator.innerHTML = `
+            <span class="method-icon">${this.midpointMethod === 'driving' ? '🚗' : '📍'}</span>
+            <span class="method-text">Midpoint calculated via <strong>${methodText}</strong> (${radiusKm}km search radius)</span>
+        `;
     }
 
     // Handle category toggle on results page
@@ -701,7 +782,8 @@ class MeetInTheMiddle {
     // Load places for a category (fetch if not cached)
     async loadCategory(category) {
         if (!this.placesByCategory[category]) {
-            const places = await this.searchPlaces(this.midpoint, category);
+            const radius = this.searchRadius || 8000;
+            const places = await this.searchPlacesWithRadius(this.midpoint, category, radius);
             this.placesByCategory[category] = places;
         }
         return this.placesByCategory[category];
@@ -805,6 +887,107 @@ class MeetInTheMiddle {
             lat: lat3 * 180 / Math.PI,
             lon: lon3 * 180 / Math.PI
         };
+    }
+
+    // Get driving route from OSRM and find the midpoint along the route
+    async getDrivingMidpoint(loc1, loc2) {
+        const url = `https://router.project-osrm.org/route/v1/driving/${loc1.lon},${loc1.lat};${loc2.lon},${loc2.lat}?overview=full&geometries=geojson`;
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Routing request failed');
+
+        const data = await response.json();
+        if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+            throw new Error('No route found');
+        }
+
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates; // Array of [lon, lat]
+        const totalDistance = route.distance; // in meters
+        const halfDistance = totalDistance / 2;
+
+        // Walk along the route to find the midpoint
+        let accumulatedDistance = 0;
+        for (let i = 0; i < coordinates.length - 1; i++) {
+            const [lon1, lat1] = coordinates[i];
+            const [lon2, lat2] = coordinates[i + 1];
+
+            const segmentDistance = this.calculateDistance(
+                { lat: lat1, lon: lon1 },
+                { lat: lat2, lon: lon2 }
+            ) * 1000; // Convert to meters
+
+            if (accumulatedDistance + segmentDistance >= halfDistance) {
+                // Midpoint is on this segment
+                const remaining = halfDistance - accumulatedDistance;
+                const ratio = remaining / segmentDistance;
+
+                return {
+                    lat: lat1 + (lat2 - lat1) * ratio,
+                    lon: lon1 + (lon2 - lon1) * ratio
+                };
+            }
+            accumulatedDistance += segmentDistance;
+        }
+
+        // Fallback to last coordinate if something goes wrong
+        const lastCoord = coordinates[coordinates.length - 1];
+        return { lat: lastCoord[1], lon: lastCoord[0] };
+    }
+
+    // Search for places with a specific radius
+    async searchPlacesWithRadius(midpoint, category, radius) {
+        const config = this.categoryConfig[category] || this.categoryConfig['restaurant'];
+
+        const tagQueries = config.tags.map(tag => `
+            node["${tag.key}"~"${tag.value}"](around:${radius},${midpoint.lat},${midpoint.lon});
+            way["${tag.key}"~"${tag.value}"](around:${radius},${midpoint.lat},${midpoint.lon});
+        `).join('');
+
+        const query = `[out:json][timeout:25];(${tagQueries});out center body;`;
+
+        const response = await fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `data=${encodeURIComponent(query)}`
+        });
+
+        if (!response.ok) throw new Error('Places search failed');
+        const data = await response.json();
+
+        return data.elements
+            .map(element => {
+                const lat = element.lat || element.center?.lat;
+                const lon = element.lon || element.center?.lon;
+                if (!lat || !lon) return null;
+
+                const distance = this.calculateDistance(midpoint, { lat, lon });
+                return {
+                    id: element.id,
+                    name: element.tags?.name || 'Unnamed Place',
+                    lat, lon,
+                    cuisine: element.tags?.cuisine || '',
+                    address: this.formatAddress(element.tags),
+                    phone: element.tags?.phone || '',
+                    website: element.tags?.website || '',
+                    distance,
+                    distanceText: this.formatDistance(distance)
+                };
+            })
+            .filter(place => place && place.name !== 'Unnamed Place')
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 20);
+    }
+
+    // Try to find places with increasing radii
+    async searchWithExpandingRadius(midpoint, category, radii = [8000, 12000, 16000, 20000]) {
+        for (const radius of radii) {
+            const places = await this.searchPlacesWithRadius(midpoint, category, radius);
+            if (places.length > 0) {
+                return { places, radius };
+            }
+        }
+        return { places: [], radius: radii[radii.length - 1] };
     }
 
     // Search for places using Overpass API
@@ -977,15 +1160,19 @@ class MeetInTheMiddle {
         this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
     }
 
-    setLoading(isLoading) {
+    setLoading(isLoading, message = 'Finding places...') {
         const btn = document.getElementById('findMiddle');
         const btnText = btn.querySelector('.btn-text');
         const btnLoading = btn.querySelector('.btn-loading');
+        const loadingText = btn.querySelector('.loading-text');
 
         if (isLoading) {
             btn.disabled = true;
             btnText.style.display = 'none';
             btnLoading.style.display = 'flex';
+            if (loadingText) {
+                loadingText.textContent = message;
+            }
         } else {
             btn.disabled = false;
             btnText.style.display = 'inline';

@@ -805,6 +805,28 @@ body {
     flex-shrink: 0;
 }
 
+/* Method Indicator (Results Page) */
+.method-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, var(--primary-light), #E0F2FE);
+    border-radius: var(--radius-lg);
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.method-indicator .method-icon {
+    font-size: 1.25rem;
+}
+
+.method-indicator .method-text strong {
+    color: var(--primary-color);
+}
+
 /* Category Toggles (Results Page) */
 .category-toggles {
     display: flex;
