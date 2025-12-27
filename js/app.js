@@ -624,8 +624,8 @@ class MeetInTheMiddle {
             this.searchRadius = null;
 
             const radii = [8000, 12000, 16000, 20000];
-            let foundPlaces = false;
-            const firstCategory = Array.from(this.selectedCategories)[0];
+            const categories = Array.from(this.selectedCategories);
+            let foundAnyPlaces = false;
 
             // Step 1: Try driving route midpoint
             try {
@@ -633,14 +633,27 @@ class MeetInTheMiddle {
                 this.midpoint = await this.getDrivingMidpoint(this.location1, this.location2);
                 this.midpointMethod = 'driving';
 
-                // Search with expanding radius
+                // Search with expanding radius - check ALL categories at each radius
                 for (const radius of radii) {
                     this.setLoading(true, `Searching within ${radius / 1000}km of driving midpoint...`);
-                    const places = await this.searchPlacesWithRadius(this.midpoint, firstCategory, radius);
-                    if (places.length > 0) {
-                        this.placesByCategory[firstCategory] = places;
+
+                    // Search all categories in parallel at this radius
+                    const results = await Promise.all(
+                        categories.map(cat => this.searchPlacesWithRadius(this.midpoint, cat, radius))
+                    );
+
+                    // Store results and check if any category found places
+                    let foundAtThisRadius = false;
+                    categories.forEach((cat, i) => {
+                        this.placesByCategory[cat] = results[i];
+                        if (results[i].length > 0) {
+                            foundAtThisRadius = true;
+                        }
+                    });
+
+                    if (foundAtThisRadius) {
                         this.searchRadius = radius;
-                        foundPlaces = true;
+                        foundAnyPlaces = true;
                         break;
                     }
                 }
@@ -649,46 +662,52 @@ class MeetInTheMiddle {
             }
 
             // Step 2: If driving route failed or yielded no results, try geographic midpoint
-            if (!foundPlaces) {
+            if (!foundAnyPlaces) {
                 this.setLoading(true, 'Calculating geographic midpoint...');
                 this.midpoint = this.calculateMidpoint(this.location1, this.location2);
                 this.midpointMethod = 'geographic';
 
-                // Search with expanding radius
+                // Search with expanding radius - check ALL categories at each radius
                 for (const radius of radii) {
                     this.setLoading(true, `Searching within ${radius / 1000}km of geographic midpoint...`);
-                    const places = await this.searchPlacesWithRadius(this.midpoint, firstCategory, radius);
-                    if (places.length > 0) {
-                        this.placesByCategory[firstCategory] = places;
+
+                    // Search all categories in parallel at this radius
+                    const results = await Promise.all(
+                        categories.map(cat => this.searchPlacesWithRadius(this.midpoint, cat, radius))
+                    );
+
+                    // Store results and check if any category found places
+                    let foundAtThisRadius = false;
+                    categories.forEach((cat, i) => {
+                        this.placesByCategory[cat] = results[i];
+                        if (results[i].length > 0) {
+                            foundAtThisRadius = true;
+                        }
+                    });
+
+                    if (foundAtThisRadius) {
                         this.searchRadius = radius;
-                        foundPlaces = true;
+                        foundAnyPlaces = true;
                         break;
                     }
                 }
 
                 // If still no results, use the largest radius
-                if (!foundPlaces) {
+                if (!foundAnyPlaces) {
                     this.searchRadius = radii[radii.length - 1];
-                    this.placesByCategory[firstCategory] = [];
                 }
             }
 
             // Initialize the base map (locations + midpoint)
             this.initResultsMapBase();
 
-            // Load remaining selected categories in parallel (using cached midpoint and radius)
-            this.setLoading(true, 'Loading additional categories...');
-            const remainingCategories = Array.from(this.selectedCategories).slice(1);
-            const categoryPromises = remainingCategories.map(async cat => {
-                const places = await this.searchPlacesWithRadius(this.midpoint, cat, this.searchRadius);
-                this.placesByCategory[cat] = places;
-            });
-            await Promise.all(categoryPromises);
-
-            // Add markers for all selected categories
+            // Add markers only for categories that have results
             this.selectedCategories.forEach(category => {
-                this.activeCategories.add(category);
-                this.addCategoryMarkers(category);
+                const places = this.placesByCategory[category] || [];
+                if (places.length > 0) {
+                    this.activeCategories.add(category);
+                    this.addCategoryMarkers(category);
+                }
             });
 
             // Update toggle UI
