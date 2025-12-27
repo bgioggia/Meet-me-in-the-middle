@@ -623,7 +623,7 @@ class MeetInTheMiddle {
             this.midpointMethod = null;
             this.searchRadius = null;
 
-            const radii = [8000, 12000, 16000, 20000];
+            const radii = [8000, 12000, 16000, 20000, 30000, 40000, 50000];
             const categories = Array.from(this.selectedCategories);
             let foundAnyPlaces = false;
 
