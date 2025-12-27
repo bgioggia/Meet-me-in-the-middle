@@ -586,6 +586,7 @@ class MeetInTheMiddle {
             if (this.selectedCategories.size > 1) {
                 this.selectedCategories.delete(category);
                 btn.classList.remove('active');
+                btn.blur(); // Remove focus to reset visual state
             }
         } else {
             this.selectedCategories.add(category);

@@ -712,6 +712,15 @@ body {
     color: var(--primary-color);
 }
 
+.category-btn:focus {
+    outline: none;
+}
+
+.category-btn:focus:not(.active) {
+    border-color: var(--border);
+    color: var(--text-secondary);
+}
+
 .category-btn.active {
     background: var(--primary-light);
     border-color: var(--primary-color);
