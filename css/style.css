@@ -707,21 +707,19 @@ body {
     transition: all 0.2s;
 }
 
-.category-btn:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+@media (hover: hover) {
+    .category-btn:hover {
+        border-color: var(--primary-color);
+        color: var(--primary-color);
+    }
 }
 
 .category-btn:focus {
     outline: none;
 }
 
-.category-btn:focus:not(.active) {
-    border-color: var(--border);
-    color: var(--text-secondary);
-}
-
-.category-btn.active {
+.category-btn.active,
+.category-btn.active:focus {
     background: var(--primary-light);
     border-color: var(--primary-color);
     color: var(--primary-color);
